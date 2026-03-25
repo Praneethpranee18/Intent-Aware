@@ -3,6 +3,10 @@ import pandas as pd
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
 
 st.set_page_config(
     page_title="Model Insights",
@@ -112,19 +116,87 @@ h1,h2,h3,h4 { font-family: 'Playfair Display', serif !important; }
 # MODEL
 # ══════════════════════════════════════════════════════════
 @st.cache_resource
-def load_model():
-    with open("model.pkl", "rb") as f:
-        return pickle.load(f)
+def train_model():
 
-try:
-    payload     = load_model()
-    model       = payload["model"]
-    le_user     = payload["le_user"]
-    le_category = payload["le_category"]
-    feat_cols   = payload["feature_columns"]
-except FileNotFoundError:
-    st.error("⚠️ model.pkl not found — run train.py first.")
-    st.stop()
+    np.random.seed(42)
+    n = 20000
+
+    user_types = np.random.choice(['new', 'returning', 'loyal'], n, p=[0.3, 0.45, 0.25])
+    categories = np.random.choice(
+        ['Electronics', 'Clothing', 'Home & Kitchen', 'Books', 'Beauty', 'Sports'], n
+    )
+
+    category_price_map = {
+        'Electronics': (80, 1200),
+        'Clothing': (15, 300),
+        'Home & Kitchen': (20, 500),
+        'Books': (5, 60),
+        'Beauty': (10, 200),
+        'Sports': (25, 400),
+    }
+
+    purchase_frequency = np.where(
+        user_types == 'loyal', np.random.randint(8, 20, n),
+        np.where(user_types == 'returning', np.random.randint(3, 10, n),
+                 np.random.randint(1, 4, n))
+    )
+
+    avg_order_value = np.where(
+        user_types == 'loyal', np.random.uniform(80, 300, n),
+        np.where(user_types == 'returning', np.random.uniform(40, 150, n),
+                 np.random.uniform(20, 80, n))
+    )
+
+    product_price = np.array([
+        np.random.uniform(*category_price_map[c]) for c in categories
+    ])
+
+    rating = np.random.uniform(1.0, 5.0, n)
+    discount_pct = np.random.choice([0, 5, 10, 15, 20, 25, 30, 40, 50], n)
+
+    score = (
+        (user_types == 'loyal') * 0.35 +
+        (user_types == 'returning') * 0.20 +
+        (purchase_frequency / 20) * 0.15 +
+        (rating / 5.0) * 0.20 +
+        (discount_pct / 50) * 0.15 +
+        np.random.uniform(0, 0.15, n)
+    )
+
+    purchase = (score > 0.45).astype(int)
+
+    df = pd.DataFrame({
+        'user_type': user_types,
+        'purchase_frequency': purchase_frequency,
+        'avg_order_value': avg_order_value,
+        'product_category': categories,
+        'product_price': product_price,
+        'rating': rating,
+        'discount_percentage': discount_pct,
+        'purchase': purchase,
+    })
+
+    # Encoding
+    le_user = LabelEncoder()
+    le_category = LabelEncoder()
+
+    df['user_type'] = le_user.fit_transform(df['user_type'])
+    df['product_category'] = le_category.fit_transform(df['product_category'])
+
+    X = df.drop(columns='purchase')
+    y = df['purchase']
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    model = RandomForestClassifier(n_estimators=200, max_depth=12)
+    model.fit(X_train, y_train)
+
+    return model, le_user, le_category, list(X.columns)
+
+
+# Load model
+model, le_user, le_category, feat_cols = train_model()
+
+st.sidebar.success("✅ Model trained successfully")
 
 # ══════════════════════════════════════════════════════════
 # PRE-COMPUTE
